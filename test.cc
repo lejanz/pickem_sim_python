@@ -23,7 +23,7 @@ int main()
 
     Swiss bracket;
     int buchholtz = 0;
-    for (uint8_t team_id = 0; team_id < 3; team_id++)
+    for (uint8_t team_id = 0; team_id < 5; team_id++)
     {
         int wins = rand_wl(gen);
         int losses = rand_wl(gen);
@@ -32,14 +32,14 @@ int main()
         bracket.set_team_record(team_id, wins, losses);
     }
 
-    std::cout << "Packed WL: " << std::hex << bracket.win_loss << std::endl;
-
-    uint64_t difficulty_score = bracket.get_difficulty_score();
-    std::cout << "Difficulty score: " << std::hex << difficulty_score << std::dec << std::endl;
+    std::cout << "Team wins: " << std::hex << bracket.team_wins << std::dec << std::endl;
+    std::cout << "Team losses: " << std::hex << bracket.team_losses << std::dec << std::endl;
+    // uint64_t difficulty_score = bracket.get_difficulty_score();
+    // std::cout << "Difficulty score: " << std::hex << difficulty_score << std::dec << std::endl;
 
     std::cout << "Buchholtz: " << buchholtz << std::endl;
 
-    int fast_buchholtz = bracket.fast_buchholtz(difficulty_score, MAGIC_JOHNSON);
+    int fast_buchholtz = bracket.fast_buchholtz(MAGIC_JOHNSON);
     std::cout << "Fast Buchholtz: " << fast_buchholtz << std::endl;
 
     //uint64_t team = TEAM_FLAG(5);

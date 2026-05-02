@@ -4,11 +4,13 @@
 
 #include "pickem_sim.h"
 
+
 int main()
 {
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_int_distribution<> rand_wl(0, 3);
+    std::uniform_int_distribution<> rand_team(0, 16);
     // Check win loss packing function
     // assert(pack_win_loss(0, 0) == 0);
     // assert(pack_win_loss(2, 2) == 0xA);
@@ -22,25 +24,71 @@ int main()
     // }
 
     Swiss bracket;
-    int buchholtz = 0;
-    for (uint8_t team_id = 0; team_id < 5; team_id++)
+    uint8_t matchups[9] = {};
+    bracket.get_matchups(matchups);
+    print_matchups(matchups);
+
+    for (uint8_t i = 0; i < 8; i++)
     {
-        int wins = rand_wl(gen);
-        int losses = rand_wl(gen);
-        std::cout << wins << losses << std::endl;
-        buchholtz += (wins - losses);
-        bracket.set_team_record(team_id, wins, losses);
+        bracket.play_match(TEAM1(matchups[i]), TEAM0(matchups[i]), 1.0f);
     }
+    
+    bracket.print_standings();
+    
+    bracket.round++;
+    bracket.get_matchups(matchups);
+    print_matchups(matchups);
 
-    std::cout << "Team wins: " << std::hex << bracket.team_wins << std::dec << std::endl;
-    std::cout << "Team losses: " << std::hex << bracket.team_losses << std::dec << std::endl;
-    // uint64_t difficulty_score = bracket.get_difficulty_score();
-    // std::cout << "Difficulty score: " << std::hex << difficulty_score << std::dec << std::endl;
+    for (uint8_t i = 0; i < 8; i++)
+    {
+        bracket.play_match(TEAM1(matchups[i]), TEAM0(matchups[i]), 1.0f);
+    }
+    
+    bracket.print_standings();
+    
+    bracket.round++;
+    bracket.get_matchups(matchups);
+    print_matchups(matchups);
 
-    std::cout << "Buchholtz: " << buchholtz << std::endl;
+    // for (uint64_t team_id = 0; team_id < 16; team_id++)
+    // {
+    //     int wins = rand_wl(gen);
+    //     int losses = rand_wl(gen);
+    //     //std::cout << team_id << " WL " << wins << losses << std::endl;
+    //     bracket.set_team_record(team_id, wins, losses);
+    //     bracket.opponents[team_id] = TEAM_FLAG(rand_team(gen));
+    // }
 
-    int fast_buchholtz = bracket.fast_buchholtz(MAGIC_JOHNSON);
-    std::cout << "Fast Buchholtz: " << fast_buchholtz << std::endl;
+    // //uint64_t i = 0;
+    // for (i = 0; i < 10000000; i++)
+    // {
+    //     bracket.team_wl = 0;
+    //     int buchholtz = 0;
+    //     for (uint8_t team_id = 0; team_id < 5; team_id++)
+    //     {
+    //         int wins = rand_wl(gen);
+    //         int losses = rand_wl(gen);
+    //         //std::cout << wins << losses << std::endl;
+    //         buchholtz += (wins - losses);
+    //         bracket.set_team_record(team_id, wins, losses);
+    //     }
+    //     int64_t fast_buchholtz = bracket.fast_buchholtz(MAGIC_JOHNSON);
+    //     assert(bracket.fast_buchholtz(MAGIC_JOHNSON) == buchholtz);
+    // }
+    // std::cout << "Done!" << i << std::endl;
+
+
+
+
+    // std::cout << "Team WL: " << std::hex << bracket.team_wl << std::dec << std::endl;
+    // //std::cout << "Team losses: " << std::hex << bracket.team_losses << std::dec << std::endl;
+    // // uint64_t difficulty_score = bracket.get_difficulty_score();
+    // // std::cout << "Difficulty score: " << std::hex << difficulty_score << std::dec << std::endl;
+
+    // std::cout << "Buchholtz: " << buchholtz << std::endl;
+
+    // int fast_buchholtz = bracket.fast_buchholtz(MAGIC_JOHNSON);
+    // std::cout << "Fast Buchholtz: " << fast_buchholtz << std::endl;
 
     //uint64_t team = TEAM_FLAG(5);
     //int64_t difficulty_score = -1;

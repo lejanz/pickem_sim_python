@@ -24,9 +24,9 @@
 #define WIN 0x4ULL
 #define LOSS 0x1ULL
 
-#define PACK_MATCHUP(team0, team1) (((team0) << 4) | (team1))
-#define TEAM0(matchup) (((matchup) >> 4) & 0xF)
-#define TEAM1(matchup) ((matchup) & 0xF)
+#define PACK_MATCHUP(team0, team1) (((team1) << 4) | (team0))
+#define TEAM0(matchup) ((matchup) & 0xF)
+#define TEAM1(matchup) (((matchup) >> 4) & 0xF)
 
 std::array<std::string, 16> team_names = {
     "furia",
@@ -46,22 +46,6 @@ std::array<std::string, 16> team_names = {
     "passion",
     "3dmax",
 };
-
-void print_matchups(uint8_t matchups[])
-{
-    std::cout << "Matchups:" << std::endl;
-    for (uint8_t i = 0; i < 8; i++)
-    {
-        uint8_t team0 = TEAM0(matchups[i]);
-        uint8_t team1 = TEAM1(matchups[i]);
-        if (team0 == team1)
-        {
-            break;
-        }
-        std::cout << team_names[team0] << " vs " << team_names[team1] << std::endl;
-    }
-    std::cout << std::endl;
-}
 
 class Seeding {
     private:
@@ -87,6 +71,18 @@ class Seeding {
             // team ID is stored in slot 3
             return std::get<3>(seeding[seed]);
         }
+
+        void print()
+        {
+            std::cout << "Standings:" << std::endl;
+            for (uint8_t seed = 0; seed < 16; seed++)
+            {
+                std::cout << team_names[get_team(seed)] << " WL: " << -1*std::get<0>(seeding[seed]) << std::get<1>(seeding[seed]) << 
+                    " B: " << -1*std::get<2>(seeding[seed]) << std::endl;
+                //std::cout << std::hex << opponents[team_id] << std::dec << std::endl;
+            }
+            std::cout << std::endl;
+        }
 };
 
 class Swiss {
@@ -97,8 +93,15 @@ class Swiss {
         uint8_t round = 1;
         double scenario_probability = 1.0f;
 
-        // temporary variables
-        // uint8_t seeding[8];
+        Swiss() = default;
+
+        Swiss(const Swiss &other)
+        {
+            team_wl = other.team_wl;
+            round = other.round;
+            scenario_probability = other.scenario_probability;
+            for (uint8_t i = 0; i < 4; i++) {opponents[i] = other.opponents[i];}
+        }
 
         uint64_t pack_wl(uint64_t wins, uint64_t losses)
         {
@@ -108,6 +111,11 @@ class Swiss {
         uint64_t get_opponents(uint8_t team_id)
         {
             return (opponents[team_id % 4] >> (team_id / 4)) & MASK_ALL(0x1);
+        }
+
+        bool rematch(uint8_t team0, uint8_t team1)
+        {
+            return (get_opponents(team0) & TEAM_FLAG(team1));
         }
 
         void add_opponent(uint8_t team_id, uint8_t opponent_id)
@@ -154,10 +162,56 @@ class Swiss {
             std::cout << std::endl;
         }
 
-
-
-        void get_matchups(uint8_t matchups[8])
+        void get_matchups_r45(Seeding &seeding, uint8_t seed_offset, uint8_t matchups[])
         {
+            // rounds 4 and 5 use a valve provided lookup table
+            // we choose the first set of matchups which does not result in
+            // a rematch
+            static const uint8_t r45_matchups[15][3][2] = {
+                {{0, 5}, {1, 4}, {2, 3}},
+                {{0, 5}, {1, 3}, {2, 4}},
+                {{0, 4}, {1, 5}, {2, 3}},
+                {{0, 4}, {1, 3}, {2, 5}},
+                {{0, 3}, {1, 5}, {2, 4}},
+                {{0, 3}, {1, 4}, {2, 5}},
+                {{0, 5}, {1, 2}, {3, 4}},
+                {{0, 4}, {1, 2}, {3, 5}},
+                {{0, 2}, {1, 5}, {3, 4}},
+                {{0, 2}, {1, 4}, {3, 5}},
+                {{0, 3}, {1, 2}, {4, 5}},
+                {{0, 2}, {1, 3}, {4, 5}},
+                {{0, 1}, {2, 5}, {3, 4}},
+                {{0, 1}, {2, 4}, {3, 5}},
+                {{0, 1}, {2, 3}, {4, 5}},
+            };
+
+            for (uint8_t i = 0; i < 15; i++)
+            {
+                bool found_rematch = false;
+                for (uint8_t j = 0; j < 3; j++)
+                {
+                    uint8_t team0 = seeding.get_team(r45_matchups[i][j][0] + seed_offset);
+                    uint8_t team1 = seeding.get_team(r45_matchups[i][j][1] + seed_offset);
+                    if (rematch(team0, team1))
+                    {
+                        found_rematch = true;
+                        break;
+                    }
+                    matchups[j] = PACK_MATCHUP(team0, team1);
+                }
+                if (!found_rematch)
+                {
+                    return;
+                }
+            }
+        }
+
+        void get_matchups(uint8_t matchups[9])
+        {
+            // matchup[8] should always be set to zero, this null termination is very important
+            // to prevent bad memory access down the line lol
+            matchups[8] = 0;
+        
             // round 1 uses fixed matchups based on pre-stage seed (team_id)
             if (round == 1)
             {
@@ -165,6 +219,7 @@ class Swiss {
                 {
                     matchups[i] = PACK_MATCHUP(i, i+8);
                 }
+
                 return;
             }
 
@@ -178,6 +233,7 @@ class Swiss {
                 seeding.set_team(team_id, WINS(wl), LOSSES(wl), buchholtz);
             }
             seeding.reseed();
+            //seeding.print();
 
             // In rounds 2 and 3, the higest seed plays the lowest available seed that does not
             // result in a rematch. Interestingly, rematches are impossible in the 1-0, 0-1, 2-0
@@ -196,8 +252,10 @@ class Swiss {
                     team1 = seeding.get_team(15-i);
                     matchups[i+4] = PACK_MATCHUP(team0, team1);
                 }
+                
                 return;
             }
+
             if (round == 3)
             {
                 for (uint8_t i = 0; i < 2; i++)
@@ -212,8 +270,65 @@ class Swiss {
                     team1 = seeding.get_team(15-i);
                     matchups[i+6] = PACK_MATCHUP(team0, team1);
                 }
+
+                uint8_t team1s[4] = {};
+                for (uint8_t i = 0; i < 4; i++)
+                {
+                    // 1-1 matchups
+                    // Only store the high seed team. Save the low seed team in a list.
+                    matchups[i+2] = seeding.get_team(i+4);
+                    team1s[i] = seeding.get_team(11-i);
+                }
+                // Check for rematches and swap around the low seed teams if one exists.
+                // Then add the low seed teams to the matchups.
+                for (uint8_t i = 0; i < 4; i++)
+                {
+                    if (rematch(matchups[i+2], team1s[i]))
+                    {
+                        matchups[i+2] |= team1s[i+1] << 4;
+                        team1s[i+1] = team1s[i];
+                    }
+                    else
+                    {
+                        matchups[i+2] |= team1s[i] << 4;
+                    }
+                }
+
                 return;
             }
 
+            if (round == 4)
+            {
+                // 2-1 matchups
+                get_matchups_r45(seeding, 2, &matchups[0]);
+                // 1-2 matchups
+                get_matchups_r45(seeding, 8, &matchups[3]);
+                // null terminator
+                matchups[6] = 0;
+
+                return;
+            }
+
+            if (round == 5)
+            {
+                // 2-2 matchups
+                get_matchups_r45(seeding, 5, &matchups[0]);
+                // null terminator
+                matchups[3] = 0;
+            }
+        }
+
+        void print_matchups(uint8_t matchups[])
+        {
+            std::cout << "Matchups:" << std::endl;
+            for (uint8_t i = 0; i < 9; i++)
+            {
+                if (!matchups[i])
+                {
+                    break;
+                }
+                std::cout << team_names[TEAM0(matchups[i])] << " vs " << team_names[TEAM1(matchups[i])] << std::endl;
+            }
+            std::cout << std::endl;
         }
 };

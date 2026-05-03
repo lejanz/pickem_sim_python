@@ -23,32 +23,30 @@ int main()
     //     std::cout << std::hex << (team) << std::endl;
     // }
 
-    Swiss bracket;
-    uint8_t matchups[9] = {};
-    bracket.get_matchups(matchups);
-    print_matchups(matchups);
-
-    for (uint8_t i = 0; i < 8; i++)
+    for (int iter = 0; iter < 1; iter++)
     {
-        bracket.play_match(TEAM1(matchups[i]), TEAM0(matchups[i]), 1.0f);
-    }
-    
-    bracket.print_standings();
-    
-    bracket.round++;
-    bracket.get_matchups(matchups);
-    print_matchups(matchups);
+        Swiss bracket;
+        uint8_t matchups[9] = {};
+        for (uint8_t round = 1; round <= 5; round++)
+        {
+            bracket.round = round;
+            bracket.get_matchups(matchups);
+            //std::cout << "Round " << +bracket.round << std::endl;
+            //bracket.print_matchups(matchups);
 
-    for (uint8_t i = 0; i < 8; i++)
-    {
-        bracket.play_match(TEAM1(matchups[i]), TEAM0(matchups[i]), 1.0f);
+            for (uint8_t i = 0; i < 8; i++)
+            {
+                if (!matchups[i])
+                {
+                    break;
+                }
+                bracket.play_match(TEAM0(matchups[i]), TEAM1(matchups[i]), 1.0f);
+            }
+            
+            bracket.print_standings();
+        }
     }
-    
-    bracket.print_standings();
-    
-    bracket.round++;
-    bracket.get_matchups(matchups);
-    print_matchups(matchups);
+
 
     // for (uint64_t team_id = 0; team_id < 16; team_id++)
     // {

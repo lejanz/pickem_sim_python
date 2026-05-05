@@ -1,26 +1,53 @@
 #include "pickem_sim.h"
 
+#include <chrono>
+
+#define WL_MAX 2
+#define ROUNDS 5
+#define MIN_CHANCE 0.01f
+
+uint64_t iteration_counter = 0;
+double team_p_wl[N_TEAMS][16] = {0.0f};
+
 void play(Swiss &bracket, uint8_t* matchups)
 {
-    uint8_t* new_matchups = nullptr;
+    iteration_counter++;
+    if (iteration_counter > 1e7)
+    {
+        return;
+    }
+
+    static uint8_t matchup_stack[100]; // prety sure we only need 29 or something but im scared
+    static uint64_t ms_counter = 0;
+    uint64_t n_new_matches = 0;
+    //uint8_t* new_matchups = nullptr;
 
     // if next matchup is zero, round is done
     if(!matchups[0])
     {
         //bracket.print_standings();
         // if round is 5, we're done!
-        if(bracket.round >= 2)
+        if(bracket.round >= ROUNDS)
         {
+            // add probabilities
+            for (uint8_t team_id = 0; team_id < N_TEAMS; team_id++)
+            {
+                uint64_t wl = (bracket.team_wl >> INV_TEAM_SHIFT(team_id)) & 0xF;
+                team_p_wl[team_id][wl] += bracket.scenario_probability;
+            }
+
+            // exit
             return;
         }
 
         // else, advance round
         bracket.round++;
 
-        // allocate a new array and calculate new matchups
-        new_matchups = new uint8_t(9);
-        matchups = new_matchups;
-        bracket.get_matchups(matchups);
+        // add new matchups to the matchup stack
+        matchups = &matchup_stack[ms_counter];
+        n_new_matches = bracket.get_matchups(matchups);
+        ms_counter += n_new_matches;
+        // std::cout << "Added matches. Counter: " << ms_counter << std::endl;
     }
 
     // grab the probability of team0 winning this matchup
@@ -38,19 +65,56 @@ void play(Swiss &bracket, uint8_t* matchups)
     play(new_bracket, &matchups[1]);
 
     // free up allocated memory
-    delete new_matchups;
+    ms_counter -= n_new_matches;
+}
+
+void print_chances()
+{
+    for (uint8_t team_id = 0; team_id < N_TEAMS; team_id++)
+    {
+        std::cout << team_names[team_id];
+        for (uint8_t wl = 0; wl <= 0xF; wl++)
+        {
+            double p_wl = team_p_wl[team_id][wl];
+            if (p_wl < MIN_CHANCE)
+            {
+                continue;
+            }
+            uint8_t wins = WINS(wl);
+            uint8_t losses = LOSSES(wl);
+            // if (!(wins == WL_MAX || losses == WL_MAX))
+            // {
+            //     continue;
+            // }
+            std::cout << " " << +wins << +losses << ": " << team_p_wl[team_id][wl];
+        }
+        std::cout << std::endl;
+    }
 }
 
 int main()
 {
+    auto start = std::chrono::high_resolution_clock::now();
+
     Swiss bracket;
     uint8_t matchups[9] = {};
 
     bracket.get_matchups(matchups);
     play(bracket, matchups);
 
-    std::cout << "Done" << std::endl;
-    bracket.print_standings();
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> duration = end - start;
+
+    std::cout << "Done. Iterations: " << iteration_counter << " Time: " << duration.count() << "ms" << std::endl;
+    // bracket.print_standings();
+
+    print_chances();
+
+    for (uint8_t round = 0; round < 5; round++)
+    {
+        std::cout << "Round " << 1 + round << ": n=" << n_time_ms[round] << ", " << avg_time_ms[round]/n_time_ms[round] 
+        << "ms avg, " << avg_time_ms[round] << "ms total" << std::endl;  
+    }
 
     return 0;
 }

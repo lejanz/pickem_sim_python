@@ -4,13 +4,64 @@
 
 #include "pickem_sim.h"
 
-
-int main()
+void test_seeding()
 {
+    const uint64_t iterations = 10000;
+    double total_time_optimized_ms = 0.0f;
+    double total_time_standard_ms = 0.0f;
+
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_int_distribution<> rand_wl(0, 3);
-    std::uniform_int_distribution<> rand_team(0, 16);
+    std::uniform_int_distribution<> rand_buchholtz(-2, 2);
+
+    for (uint64_t iter = 0; iter < iterations; iter++)
+    {
+        Seeding seeding; // optimized class
+        seeding.reset(0);
+        std::array<std::tuple<int, int>, 8> seed_array; // standard implementation to compare against
+
+        for (int team_id = 7; team_id >= 0; team_id--)
+        {
+            int buchholtz_b = rand_buchholtz(gen);
+            // std::cout << team_id << " " << buchholtz_b << std::endl;
+
+            // run optimized sort and keep track of time
+            auto start = std::chrono::high_resolution_clock::now();
+            seeding.add_team(team_id, 0, buchholtz_b);
+            auto end = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double, std::milli> duration = end - start;
+            total_time_optimized_ms += duration.count();
+
+            std::get<0>(seed_array[team_id]) = buchholtz_b;
+            std::get<1>(seed_array[team_id]) = team_id;
+        }
+
+        // run standard sort and keep track of time
+        auto start = std::chrono::high_resolution_clock::now();
+        std::sort(seed_array.begin(), seed_array.end());
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double, std::milli> duration = end - start;
+        total_time_standard_ms += duration.count();
+
+        for (int seed = 0; seed < 8; seed++)
+        {
+            //std::cout << +seeding.get_team(0, seed) << " " << std::get<1>(seed_array[seed]) << std::endl;
+            assert(seeding.get_team(0, seed) == std::get<1>(seed_array[seed]));
+        }
+    }
+
+    std::cout << "Standard total time: " << total_time_standard_ms << "ms" << std::endl;
+    std::cout << "Optimized total time: " << total_time_optimized_ms << "ms" << std::endl;
+}
+
+
+int main()
+{
+    // std::random_device rd;
+    // std::mt19937 gen(rd());
+    // std::uniform_int_distribution<> rand_wl(0, 3);
+    // std::uniform_int_distribution<> rand_team(0, 16);
     // Check win loss packing function
     // assert(pack_win_loss(0, 0) == 0);
     // assert(pack_win_loss(2, 2) == 0xA);
@@ -31,8 +82,8 @@ int main()
         {
             bracket.round = round;
             bracket.get_matchups(matchups);
-            //std::cout << "Round " << +bracket.round << std::endl;
-            //bracket.print_matchups(matchups);
+            std::cout << "Round " << +bracket.round << std::endl;
+            bracket.print_matchups(matchups);
 
             for (uint8_t i = 0; i < 8; i++)
             {
@@ -98,6 +149,16 @@ int main()
     // uint64_t opponents = TEAM_FLAG(0) | TEAM_FLAG(1);
     // uint64_t buchholtz = (opponents * difficulty_score) >> 60 & 0x7;
     // std::cout << std::hex << buchholtz << std::endl;
+
+    // Seeding seeding;
+    // seeding.reset(PACK_WL(1, 1));
+    // seeding.add_team(2, PACK_WL(1, 1), 1);
+    // seeding.add_team(1, PACK_WL(1, 1), 2);
+    // seeding.add_team(0, PACK_WL(1, 1), 1);
+
+    // std::cout << +seeding.get_team(PACK_WL(1, 1), 2) << std::endl;
+
+    // test_seeding();
 
     return 0;
 }

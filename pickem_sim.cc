@@ -2,19 +2,56 @@
 
 #include <chrono>
 
-#define WL_MAX 2
+#define WL_MAX 3
 #define ROUNDS 5
 #define MIN_CHANCE 0.01f
 
 uint64_t iteration_counter = 0;
+double matchup_chances[N_TEAMS*N_TEAMS] = {};
 double team_p_wl[N_TEAMS][16] = {0.0f};
 
 double p_time = 0.0f;
 
+void complement_matchup_chances()
+{
+    for (int team_id = 0; team_id < N_TEAMS; team_id++)
+    {
+        for (int opponent = team_id + 1; opponent < N_TEAMS; opponent++)
+        {
+            matchup_chances[PACK_MATCHUP(opponent, team_id)] = (
+            1 - matchup_chances[PACK_MATCHUP(team_id, opponent)]);
+        }
+    }
+}
+
+void play_round5(Swiss &bracket)
+{
+    static uint8_t matchups[4];
+    bracket.get_matchups(&matchups[0]);
+
+    // play the 3 matches in round 5
+    for (uint8_t m = 0; m < 3; m++)
+    {
+        double p_team0 = matchup_chances[matchups[m]];
+        uint8_t team0 = TEAM0(matchups[m]);
+        uint8_t team1 = TEAM1(matchups[m]);
+
+        // add probabilities for team0 beating team1
+        double p_scenario_team0 = bracket.scenario_probability * p_team0;
+        team_p_wl[team0][PACK_WL(3, 2)] += p_scenario_team0;
+        team_p_wl[team1][PACK_WL(2, 3)] += p_scenario_team0;
+
+        // add probabilities for team1 beating team0
+        double p_scenario_team1 = bracket.scenario_probability * (1-p_team0);
+        team_p_wl[team0][PACK_WL(2, 3)] += p_scenario_team1;
+        team_p_wl[team1][PACK_WL(3, 2)] += p_scenario_team1;
+    }
+}
+
 void play(Swiss &bracket, uint8_t* matchups)
 {
     // iteration_counter++;
-    // if (iteration_counter > 1e8)
+    // if (iteration_counter > 1e7)
     // {
     //     return;
     // }
@@ -26,18 +63,19 @@ void play(Swiss &bracket, uint8_t* matchups)
     // if next matchup is zero, round is done
     if(!matchups[0])
     {
-        //bracket.print_standings();
-        // if round is 5, we're done!
-        if(bracket.round >= ROUNDS)
-        {
+        // bracket.print_standings();
+        bracket.round++;
 
+        if(bracket.round >= 5)
+        {
             // auto start = std::chrono::high_resolution_clock::now();
             // add probabilities
             for (uint8_t team_id = 0; team_id < N_TEAMS; team_id++)
             {
-                uint64_t wl = (bracket.team_wl >> INV_TEAM_SHIFT(team_id)) & 0xF;
+                uint64_t wl = bracket.get_wl(team_id);
                 team_p_wl[team_id][wl] += bracket.scenario_probability;
             }
+            play_round5(bracket);
             // auto end = std::chrono::high_resolution_clock::now();
             // std::chrono::duration<double, std::milli> duration = end - start;
             // p_time += duration.count();
@@ -45,18 +83,14 @@ void play(Swiss &bracket, uint8_t* matchups)
             return;
         }
 
-        // else, advance round
-        bracket.round++;
-
         // add new matchups to the matchup stack
         matchups = &matchup_stack[ms_counter];
         n_new_matches = bracket.get_matchups(matchups);
         ms_counter += n_new_matches;
-        // std::cout << "Added matches. Counter: " << ms_counter << std::endl;
     }
 
     // grab the probability of team0 winning this matchup
-    double p_team0 = 0.5f;
+    double p_team0 = matchup_chances[matchups[0]];
 
     // make a copy of the current bracket
     Swiss new_bracket(bracket);
@@ -78,20 +112,15 @@ void print_chances()
     for (uint8_t team_id = 0; team_id < N_TEAMS; team_id++)
     {
         std::cout << team_names[team_id];
-        for (uint8_t wl = 0; wl <= 0xF; wl++)
+        for (int wl = 0xE; wl >= 0x3; wl--)
         {
             double p_wl = team_p_wl[team_id][wl];
-            if (p_wl < MIN_CHANCE)
-            {
-                continue;
-            }
             uint8_t wins = WINS(wl);
             uint8_t losses = LOSSES(wl);
-            // if (!(wins == WL_MAX || losses == WL_MAX))
-            // {
-            //     continue;
-            // }
-            std::cout << " " << +wins << +losses << ": " << team_p_wl[team_id][wl];
+            if (wins == WL_MAX || losses == WL_MAX)
+            {
+                std::cout << " " << +wins << +losses << ": " << team_p_wl[team_id][wl];
+            }
         }
         std::cout << std::endl;
     }
@@ -100,6 +129,12 @@ void print_chances()
 int main()
 {
     auto start = std::chrono::high_resolution_clock::now();
+
+    for (int i = 0; i < (N_TEAMS*N_TEAMS); i++)
+    {
+        matchup_chances[i] = 0.9f;
+    }
+    complement_matchup_chances();
 
     Swiss bracket;
     uint8_t matchups[9] = {};

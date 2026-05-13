@@ -54,44 +54,6 @@ std::array<std::string, 16> team_names = {
     "3dmax",
 };
 
-// class Seeding {
-//     private:
-//         using seed_t = std::tuple<int64_t, uint64_t, int64_t, uint64_t>;
-//         std::array<seed_t, N_TEAMS> seeding = {};
-
-//     public:
-//         void set_team(uint8_t team_id, uint64_t wins, uint64_t losses, int64_t buchholtz)
-//         {
-//             std::get<0>(seeding[team_id]) = -1*(int64_t)wins; // wins descending
-//             std::get<1>(seeding[team_id]) = losses; // losses ascending
-//             std::get<2>(seeding[team_id]) = -1*buchholtz; // buchholtz descending
-//             std::get<3>(seeding[team_id]) = team_id; // team id ascending
-//         }
-
-//         void reseed()
-//         {
-//             std::sort(seeding.begin(), seeding.end());
-//         }
-
-//         uint8_t get_team(uint8_t seed)
-//         {
-//             // team ID is stored in slot 3
-//             return std::get<3>(seeding[seed]);
-//         }
-
-//         void print()
-//         {
-//             std::cout << "Standings:" << std::endl;
-//             for (uint8_t seed = 0; seed < 16; seed++)
-//             {
-//                 std::cout << team_names[get_team(seed)] << " WL: " << -1*std::get<0>(seeding[seed]) << std::get<1>(seeding[seed]) << 
-//                     " B: " << -1*std::get<2>(seeding[seed]) << std::endl;
-//                 //std::cout << std::hex << opponents[team_id] << std::dec << std::endl;
-//             }
-//             std::cout << std::endl;
-//         }
-// };
-
 class Seeding {
     private:
         uint64_t seeding[16] = {0};
@@ -100,12 +62,12 @@ class Seeding {
         // uint64s here and index based on wl rather than use branching
 
     public:
-        void reset(uint64_t wl)
+        void reset(const uint64_t wl)
         {
             seeding[wl] = 0x7F7F7F7F7F7F7F7F;
         }
 
-        void add_team(uint8_t team_id, uint64_t wl, int64_t buchholtz_b)
+        void add_team(const uint8_t team_id, const uint64_t wl, const int64_t buchholtz_b)
         {
             // must call reset first!
             if (!seeding[wl])
@@ -141,80 +103,15 @@ class Seeding {
             //std::cout << std::hex << seeding[wl] << std::dec << std::endl;
         }
 
-        uint8_t get_team(uint64_t wl, uint8_t seed)
+        uint8_t get_team(const uint64_t wl, const uint8_t seed)
         {
             return seeding[wl] >> (8*seed) & 0xF;
         }   
-
-        // void print()
-        // {
-        //     std::cout << "Standings:" << std::endl;
-        //     for (uint8_t seed = 0; seed < 16; seed++)
-        //     {
-        //         std::cout << team_names[get_team(seed)] << " WL: " << -1*std::get<0>(seeding[seed]) << std::get<1>(seeding[seed]) << 
-        //             " B: " << -1*std::get<2>(seeding[seed]) << std::endl;
-        //         //std::cout << std::hex << opponents[team_id] << std::dec << std::endl;
-        //     }
-        //     std::cout << std::endl;
-        // }
 };
 
 class Swiss {
-    public:
-        // state variables
-        uint64_t team_wl = 0; // packed, stored in reverse order
-        uint64_t opponents[4] = {};
-        uint8_t round = 1;
-        double scenario_probability = 1.0f;
-
-        Swiss() = default;
-
-        Swiss(const Swiss &other)
-        {
-            team_wl = other.team_wl;
-            round = other.round;
-            scenario_probability = other.scenario_probability;
-            for (uint8_t i = 0; i < 4; i++) {opponents[i] = other.opponents[i];}
-        }
-
-        uint64_t pack_wl(uint64_t wins, uint64_t losses)
-        {
-            return ((wins << 2) | losses);
-        }
-
-        uint64_t get_opponents(uint8_t team_id)
-        {
-            return (opponents[team_id % 4] >> (team_id / 4)) & MASK_ALL(0x1);
-        }
-
-        uint64_t get_wl(uint8_t team_id)
-        {
-            return (team_wl >> INV_TEAM_SHIFT(team_id)) & 0xF;
-        }
-
-        bool rematch(uint8_t team0, uint8_t team1)
-        {
-            return (get_opponents(team0) & TEAM_FLAG(team1));
-        }
-
-        void add_opponent(uint8_t team_id, uint8_t opponent_id)
-        {
-            opponents[team_id % 4] |= (0x1ULL << TEAM_SHIFT(opponent_id) << (team_id / 4));
-        }
-
-        void set_team_record(uint8_t team_id, uint8_t wins, uint8_t losses)
-        {
-            team_wl |= pack_wl(wins, losses) << ((15-team_id)*4);
-        }
-
-        void play_match(uint8_t winner, uint8_t loser, double probability)
-        {
-            team_wl += WIN << INV_TEAM_SHIFT(winner);
-            team_wl += LOSS << INV_TEAM_SHIFT(loser);
-            add_opponent(winner, loser);
-            add_opponent(loser, winner);
-            scenario_probability *= probability;
-        }
+    private:
+        inline static Seeding seeding{};
 
         int fast_buchholtz_b(uint64_t team_opponents)
         {
@@ -229,7 +126,17 @@ class Swiss {
             return result;
         }
 
-        void get_matchups_r45(Seeding &seeding, uint64_t wl, uint8_t matchups[])
+        void reseed()
+        {
+            for (int team_id = N_TEAMS-1; team_id >= 0; team_id--)
+            {
+                uint64_t wl = get_wl(team_id);
+                int64_t buchholtz_b = fast_buchholtz_b(get_opponents(team_id));
+                seeding.add_team(team_id, wl, buchholtz_b);
+            }
+        }
+
+        void get_matchups_r45(uint64_t wl, uint8_t matchups[])
         {
             // rounds 4 and 5 use a valve provided lookup table
             // we choose the first set of matchups which does not result in
@@ -271,6 +178,52 @@ class Swiss {
                     return;
                 }
             }
+        }
+
+    public:
+        // state variables
+        uint64_t team_wl = 0; // packed, stored in reverse order
+        uint64_t opponents[4] = {};
+        uint8_t round = 1;
+        double scenario_probability = 1.0f;
+
+        Swiss() = default;
+
+        Swiss(const Swiss &other)
+        {
+            team_wl = other.team_wl;
+            round = other.round;
+            scenario_probability = other.scenario_probability;
+            for (uint8_t i = 0; i < 4; i++) {opponents[i] = other.opponents[i];}
+        }
+
+        uint64_t get_opponents(const uint8_t team_id)
+        {
+            return (opponents[team_id % 4] >> (team_id / 4)) & MASK_ALL(0x1);
+        }
+
+        uint64_t get_wl(const uint8_t team_id)
+        {
+            return (team_wl >> INV_TEAM_SHIFT(team_id)) & 0xF;
+        }
+
+        bool rematch(const uint8_t team0, const uint8_t team1)
+        {
+            return (get_opponents(team0) & TEAM_FLAG(team1));
+        }
+
+        void add_opponent(const uint8_t team_id, const uint8_t opponent_id)
+        {
+            opponents[team_id % 4] |= (0x1ULL << TEAM_SHIFT(opponent_id) << (team_id / 4));
+        }
+
+        void play_match(const uint8_t winner, const uint8_t loser, const double probability)
+        {
+            team_wl += WIN << INV_TEAM_SHIFT(winner);
+            team_wl += LOSS << INV_TEAM_SHIFT(loser);
+            add_opponent(winner, loser);
+            add_opponent(loser, winner);
+            scenario_probability *= probability;
         }
 
         // void get_matchups_r45_fast(Seeding &seeding, uint8_t seed_offset, uint8_t matchups[])
@@ -338,12 +291,12 @@ class Swiss {
         //     }
         // }
 
-        uint64_t get_matchups(uint8_t matchups[9])
+        uint64_t get_matchups(uint8_t matchups[])
         {
-            // double time_ms = 0;
             uint8_t n_matchups = 0;
 
-            // auto start = std::chrono::high_resolution_clock::now();
+            double time_ms = 0;
+            auto start = std::chrono::high_resolution_clock::now();
         
             // round 1 uses fixed matchups based on pre-stage seed (team_id)
             if (round == 1)
@@ -359,17 +312,14 @@ class Swiss {
             // and 0-2 matchups, so we only need to check for rematches in the 1-1 matchups.
             else if (round == 2)
             {
+                // keep track of number of round 2s, there are 256 total and this is a nice
+                // way to make a progress bar
                 r2s++;
-                std::cout << r2s << std::endl;
-                Seeding seeding;
+                std::cout << r2s << "/256" << std::endl;
+
                 seeding.reset(PACK_WL(1, 0));
                 seeding.reset(PACK_WL(0, 1));
-                for (int team_id = N_TEAMS-1; team_id >= 0; team_id--)
-                {
-                    uint64_t wl = get_wl(team_id);
-                    int64_t buchholtz_b = 0; // buchholtz doesn't matter in round 2
-                    seeding.add_team(team_id, wl, buchholtz_b);
-                }
+                reseed();
                 for (uint8_t i = 0; i < 4; i++)
                 {
                     // 1-0 matchups
@@ -386,16 +336,10 @@ class Swiss {
             }
             else if (round == 3)
             {
-                Seeding seeding;
                 seeding.reset(PACK_WL(2, 0));
                 seeding.reset(PACK_WL(1, 1));
                 seeding.reset(PACK_WL(0, 2));
-                for (int team_id = N_TEAMS-1; team_id >= 0; team_id--)
-                {
-                    uint64_t wl = get_wl(team_id);
-                    int64_t buchholtz_b = fast_buchholtz_b(get_opponents(team_id));
-                    seeding.add_team(team_id, wl, buchholtz_b);
-                }
+                reseed();
                 for (uint8_t i = 0; i < 2; i++)
                 {
                     // 2-0 matchups
@@ -434,35 +378,23 @@ class Swiss {
             }
             else if (round == 4)
             {
-                Seeding seeding;
                 seeding.reset(PACK_WL(2, 1));
                 seeding.reset(PACK_WL(1, 2));
-                for (int team_id = N_TEAMS-1; team_id >= 0; team_id--)
-                {
-                    uint64_t wl = get_wl(team_id);
-                    int64_t buchholtz_b = fast_buchholtz_b(get_opponents(team_id));
-                    seeding.add_team(team_id, wl, buchholtz_b);
-                }
+                reseed();
                 // 2-1 matchups
-                get_matchups_r45(seeding, PACK_WL(2, 1), &matchups[0]);
+                get_matchups_r45(PACK_WL(2, 1), &matchups[0]);
                 // 1-2 matchups
-                get_matchups_r45(seeding, PACK_WL(1, 2), &matchups[3]);
+                get_matchups_r45(PACK_WL(1, 2), &matchups[3]);
 
                 n_matchups = 6;
 
             }
             else if (round == 5)
             {
-                Seeding seeding;
                 seeding.reset(PACK_WL(2, 2));
-                for (int team_id = N_TEAMS-1; team_id >= 0; team_id--)
-                {
-                    uint64_t wl = get_wl(team_id);
-                    int64_t buchholtz_b = fast_buchholtz_b(get_opponents(team_id));
-                    seeding.add_team(team_id, wl, buchholtz_b);
-                }
+                reseed();
                 // 2-2 matchups
-                get_matchups_r45(seeding, PACK_WL(2, 2), &matchups[0]);
+                get_matchups_r45(PACK_WL(2, 2), &matchups[0]);
 
                 n_matchups = 3;
             }
@@ -471,15 +403,15 @@ class Swiss {
             // this is very important to prevent invalid memory access
             matchups[n_matchups] = 0;
 
-            // auto end = std::chrono::high_resolution_clock::now();
-            // std::chrono::duration<double, std::milli> duration = end - start;
-            // time_ms = duration.count();
-            // if (time_ms > max_time_ms[round-1])
-            // {
-            //     max_time_ms[round-1] = time_ms;
-            // }
-            // avg_time_ms[round-1] += time_ms;
-            // n_time_ms[round-1]++;
+            auto end = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double, std::milli> duration = end - start;
+            time_ms = duration.count();
+            if (time_ms > max_time_ms[round-1])
+            {
+                max_time_ms[round-1] = time_ms;
+            }
+            avg_time_ms[round-1] += time_ms;
+            n_time_ms[round-1]++;
 
             //std::cout << "Elapsed time: " << duration.count() << " ms" << std::endl;
 
@@ -487,7 +419,7 @@ class Swiss {
             return n_matchups + 1;
         }
 
-        void print_matchups(uint8_t matchups[])
+        static void print_matchups(const uint8_t matchups[])
         {
             std::cout << "Matchups:" << std::endl;
             for (uint8_t i = 0; i < 9; i++)

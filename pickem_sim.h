@@ -1,3 +1,5 @@
+#pragma once
+
 #include <stdint.h>
 #include <iostream>
 #include <array>
@@ -33,25 +35,33 @@ double max_time_ms[5] = {0.0f};
 double avg_time_ms[5] = {0.0f};
 uint64_t n_time_ms[5] = {0};
 
+double t_seed = 0.0f;
+double t_match_r45 = 0.0f;
+
+uint64_t max_depth = 0;
+uint64_t total_depth = 0;
+uint64_t count_seed = 0;
+uint64_t count_r45 = 0;
+
 int r2s = 0;
 
 std::array<std::string, 16> team_names = {
-    "furia",
-    "vitality",
-    "falcons",
-    "mongolz",
-    "mouz",
-    "spirit",
-    "g2", 
-    "pain",
-    "navi",
-    "faze",
-    "b8",
-    "imperial",
-    "parivision",
-    "liquid",
-    "passion",
-    "3dmax",
+    "GamerLegion",
+    "B8 Esports",
+    "HEROIC",
+    "Team Liquid",
+    "BetBoom Team",
+    "M80",
+    "BIG",
+    "MIBR",
+    "NRG Esports",
+    "SINNERS Esports",
+    "FlyQuest",
+    "TYLOO",
+    "Gaimin Gladiators",
+    "Lynn Vision Gaming",
+    "Sharks Esports",
+    "THUNDERdOWNUNDER",
 };
 
 class Seeding {
@@ -69,6 +79,8 @@ class Seeding {
 
         void add_team(const uint8_t team_id, const uint64_t wl, const int64_t buchholtz_b)
         {
+            // count_seed++;
+            // auto start = std::chrono::high_resolution_clock::now();
             // must call reset first!
             if (!seeding[wl])
             {
@@ -80,7 +92,7 @@ class Seeding {
             uint64_t team_seed = ((buchholtz_b & 0xF) << 4 | team_id);
             //std::cout << "Team seed: " << std::hex << team_seed << std::dec << std::endl;
 
-            uint64_t higher_team_mask = 0;
+            uint64_t lower_team_mask = 0xFFFFFFFFFFFFFFFF;
             uint64_t seeding_temp = seeding[wl];
 
             for (uint8_t i = 0; i < 8; i++)
@@ -88,7 +100,7 @@ class Seeding {
                 if ((int8_t)team_seed < (int8_t)seeding_temp)
                 {
                     // make space for the new team
-                    seeding[wl] = (seeding[wl] & ~higher_team_mask) << 8 | seeding[wl] & higher_team_mask;
+                    seeding[wl] = (seeding[wl] & lower_team_mask) << 8 | seeding[wl] & ~lower_team_mask;
                     // add the new team
                     seeding[wl] |= team_seed << (i*8);
 
@@ -96,10 +108,12 @@ class Seeding {
                 }
                 // shift down the temporary seeding for next comparison
                 seeding_temp = seeding_temp >> 8;
-                // add the current team slot to the higher team mask
-                higher_team_mask = higher_team_mask << 8 | 0xFF;
+                // shift in zeros for the higher seeded team
+                lower_team_mask = lower_team_mask << 8;
             }
-
+            // auto end = std::chrono::high_resolution_clock::now();
+            // std::chrono::duration<double, std::milli> duration = end - start;
+            // t_seed += duration.count();
             //std::cout << std::hex << seeding[wl] << std::dec << std::endl;
         }
 
@@ -138,6 +152,8 @@ class Swiss {
 
         void get_matchups_r45(uint64_t wl, uint8_t matchups[])
         {
+            // count_r45++;
+            // auto start = std::chrono::high_resolution_clock::now();
             // rounds 4 and 5 use a valve provided lookup table
             // we choose the first set of matchups which does not result in
             // a rematch
@@ -175,6 +191,15 @@ class Swiss {
                 }
                 if (!found_rematch)
                 {
+                    // total_depth += i;
+                    // if (i > max_depth)
+                    // {
+                    //     max_depth = i;
+                    // }
+                    // std::cout << +i << std::endl;
+                    // auto end = std::chrono::high_resolution_clock::now();
+                    // std::chrono::duration<double, std::milli> duration = end - start;
+                    // t_match_r45 += duration.count();
                     return;
                 }
             }
@@ -295,8 +320,8 @@ class Swiss {
         {
             uint8_t n_matchups = 0;
 
-            double time_ms = 0;
-            auto start = std::chrono::high_resolution_clock::now();
+            // double time_ms = 0;
+            // auto start = std::chrono::high_resolution_clock::now();
         
             // round 1 uses fixed matchups based on pre-stage seed (team_id)
             if (round == 1)
@@ -402,16 +427,6 @@ class Swiss {
             // add null terminator to end of matchups
             // this is very important to prevent invalid memory access
             matchups[n_matchups] = 0;
-
-            auto end = std::chrono::high_resolution_clock::now();
-            std::chrono::duration<double, std::milli> duration = end - start;
-            time_ms = duration.count();
-            if (time_ms > max_time_ms[round-1])
-            {
-                max_time_ms[round-1] = time_ms;
-            }
-            avg_time_ms[round-1] += time_ms;
-            n_time_ms[round-1]++;
 
             //std::cout << "Elapsed time: " << duration.count() << " ms" << std::endl;
 

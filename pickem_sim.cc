@@ -1,10 +1,19 @@
 #include "pickem_sim.h"
 
+#include "pickem_points.h"
+
+#include <iomanip>
 #include <chrono>
+#include <fstream>
+#include <sstream>
+#include <assert.h>
+#include <string>
 
 #define WL_MAX 3
 #define ROUNDS 5
 #define MIN_CHANCE 0.01f
+
+// #define ITERATION_CAP 1e8
 
 uint64_t iteration_counter = 0;
 double matchup_chances[N_TEAMS*N_TEAMS] = {};
@@ -12,14 +21,27 @@ double team_p_wl[N_TEAMS][16] = {0.0f};
 
 double p_time = 0.0f;
 
-void complement_matchup_chances()
+void read_csv(std::string csv_path)
 {
-    for (int team_id = 0; team_id < N_TEAMS; team_id++)
+    std::ifstream file(csv_path);
+    assert(file.is_open());
+
+    std::string line;
+    for (int team_id = 0; team_id < N_TEAMS - 1; team_id++)
     {
-        for (int opponent = team_id + 1; opponent < N_TEAMS; opponent++)
+        assert(std::getline(file, line) && "Not enough rows in csv!");
+        std::stringstream ss(line);
+        std::string value;
+        for (int opponent = 0; opponent < N_TEAMS; opponent++)
         {
-            matchup_chances[PACK_MATCHUP(opponent, team_id)] = (
-            1 - matchup_chances[PACK_MATCHUP(team_id, opponent)]);
+            assert(std::getline(ss, value, '\t') && "Not enough columns in csv!");
+            if (!value.empty())
+            {
+                double p_win = std::stod(value);
+                // std::cout << team_names[team_id] << " beats " << team_names[opponent] << ": " << p_win << std::endl;
+                matchup_chances[PACK_MATCHUP(team_id, opponent)] = p_win;
+                matchup_chances[PACK_MATCHUP(opponent, team_id)] = 1 - p_win;
+            }
         }
     }
 }
@@ -50,11 +72,13 @@ void play_round5(Swiss &bracket)
 
 void play(Swiss &bracket, uint8_t* matchups)
 {
-    // iteration_counter++;
-    // if (iteration_counter > 1e7)
-    // {
-    //     return;
-    // }
+    #ifdef ITERATION_CAP
+    iteration_counter++;
+    if (iteration_counter > ITERATION_CAP)
+    {
+        return;
+    }
+    #endif
 
     static uint8_t matchup_stack[100]; // prety sure we only need 29 or something but im scared
     static uint64_t ms_counter = 0;
@@ -68,7 +92,6 @@ void play(Swiss &bracket, uint8_t* matchups)
 
         if(bracket.round >= 5)
         {
-            // auto start = std::chrono::high_resolution_clock::now();
             // add probabilities
             for (uint8_t team_id = 0; team_id < N_TEAMS; team_id++)
             {
@@ -76,10 +99,6 @@ void play(Swiss &bracket, uint8_t* matchups)
                 team_p_wl[team_id][wl] += bracket.scenario_probability;
             }
             play_round5(bracket);
-            // auto end = std::chrono::high_resolution_clock::now();
-            // std::chrono::duration<double, std::milli> duration = end - start;
-            // p_time += duration.count();
-            // exit
             return;
         }
 
@@ -109,6 +128,9 @@ void play(Swiss &bracket, uint8_t* matchups)
 
 void print_chances()
 {
+    std::cout << std::setprecision(2);
+
+    // print all probabilities
     for (uint8_t team_id = 0; team_id < N_TEAMS; team_id++)
     {
         std::cout << team_names[team_id];
@@ -124,17 +146,50 @@ void print_chances()
         }
         std::cout << std::endl;
     }
+
+    std::ofstream outFile("odds.txt");
+    if (!outFile.is_open())
+    {
+        std::cout << "failed to open odds.txt!" << std::endl;
+    }
+
+    std::cout << "3-0 chances:" << std::endl;
+    for (uint8_t team_id = 0; team_id < N_TEAMS; team_id++)
+    {
+        double p = team_p_wl[team_id][PACK_WL(3, 0)];
+        std::cout << team_names[team_id] << ": " <<  p << " ";
+        outFile << p << " ";
+    }
+    std::cout << std::endl;
+    outFile << std::endl;
+
+    std::cout << "3-2/3-1 chances:" << std::endl;
+    for (uint8_t team_id = 0; team_id < N_TEAMS; team_id++)
+    {
+        double p = team_p_wl[team_id][PACK_WL(3, 1)] + team_p_wl[team_id][PACK_WL(3, 2)];
+        std::cout << team_names[team_id] << ": " <<  p << " ";
+        outFile << p << " ";
+    }
+    std::cout << std::endl;
+    outFile << std::endl;
+
+    std::cout << "0-3 chances:" << std::endl;
+    for (uint8_t team_id = 0; team_id < N_TEAMS; team_id++)
+    {
+        double p = team_p_wl[team_id][PACK_WL(0, 3)];
+        std::cout << team_names[team_id] << ": " <<  p << " ";
+        outFile << p << " ";
+    }
+    std::cout << std::endl;
+    outFile << std::endl;
+
 }
 
 int main()
 {
     auto start = std::chrono::high_resolution_clock::now();
 
-    for (int i = 0; i < (N_TEAMS*N_TEAMS); i++)
-    {
-        matchup_chances[i] = 0.9f;
-    }
-    complement_matchup_chances();
+    read_csv("WinProbability.csv");
 
     Swiss bracket;
     uint8_t matchups[9] = {};
@@ -151,11 +206,16 @@ int main()
 
     print_chances();
 
-    for (uint8_t round = 0; round < 5; round++)
-    {
-        std::cout << "Round " << 1 + round << ": n=" << n_time_ms[round] << ", " << avg_time_ms[round]/n_time_ms[round] 
-        << "ms avg, " << avg_time_ms[round] << "ms total" << std::endl;  
-    }
+    // for (uint8_t round = 0; round < 5; round++)
+    // {
+    //     std::cout << "Round " << 1 + round << ": n=" << n_time_ms[round] << ", " << avg_time_ms[round]/n_time_ms[round] 
+    //     << "ms avg, " << avg_time_ms[round] << "ms total" << std::endl;  
+    // }
+
+    // std::cout << "Seeding time: " << t_seed << "ms " << count_seed << std::endl;
+    // std::cout << "r45 time: " << t_match_r45 << "ms " << count_r45 << std::endl;
+    // std::cout << "max depth: " << max_depth << ", avg: " << (double)total_depth / (double)(count_r45) << std::endl;
+    std::array<uint8_t, 10> picks = {0, 1, 2, 3, 4, 5, 6, 7, 14, 15};
 
     return 0;
 }
